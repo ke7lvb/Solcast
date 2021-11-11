@@ -9,3 +9,5 @@ Hubitat Driver using the Solcast Solar Estimate API
 
 
 Built using the [Solcast Solar API](https://docs.solcast.com.au/#forecasts-rooftop-site)
+
+Gives an estimate for your solar array production for the next 24, 48, and 72 hours 
