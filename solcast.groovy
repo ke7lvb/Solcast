@@ -2,7 +2,8 @@ metadata {
     definition(
         name: "Solcast",
         namespace: "ke7lvb",
-        author: "Ryan Lundell"
+        author: "Ryan Lundell",
+        importUrl: "https://raw.githubusercontent.com/ke7lvb/Solcast/main/solcast.groovy",
     ) {
         capability "Refresh"
         capability "EnergyMeter"
@@ -29,7 +30,7 @@ metadata {
 }
 
 def version() {
-    return "1.0.1"
+    return "1.0.2"
 }
 
 def installed() {
