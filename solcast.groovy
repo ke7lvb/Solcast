@@ -9,6 +9,9 @@ metadata {
         capability "EnergyMeter"
 
         attribute "energy", "number"
+        attribute "24 Hour Peak Production", "number"
+        attribute "48 Hour Peak Production", "number"
+        attribute "72 Hour Peak Production", "number"
         attribute "48 Hour Estimate", "number"
         attribute "72 Hour Estimate", "number"
         attribute "lastUpdate", "string"
@@ -30,7 +33,7 @@ metadata {
 }
 
 def version() {
-    return "1.0.2"
+    return "1.0.3"
 }
 
 def installed() {
@@ -95,7 +98,25 @@ def refresh() {
         next72High = next72High + pv_estimate_high
         next72Low = next72Low + pv_estimate_low
     }
+    
+    tomorrow = new Date().next().format("yyyy-MM-dd'T'HH:mm:ss'Z'",outputTZ)
+    forecast24 = forecasts.findAll { it.period_end < tomorrow}
+    if(debugLog) log.info forecast24
+    peak24 = forecast24.max() { it.pv_estimate }
+    
+    twoDays = new Date().plus(2).format("yyyy-MM-dd'T'HH:mm:ss'Z'",outputTZ)
+    forecast48 = forecasts.findAll { it.period_end < twoDays}
+    peak48 = forecast48.max() { it.pv_estimate }
+    
+    peak72 = forecasts.max() { it.pv_estimate }
 
+    state.peak24 = peak24.pv_estimate
+    sendEvent(name: "24 Hour Peak Production", value: state.peak24)
+    state.peak48 = peak48.pv_estimate
+    sendEvent(name: "48 Hour Peak Production", value: state.peak48)
+    state.peak72 = peak72.pv_estimate
+    sendEvent(name: "72 Hour Peak Production", value: state.peak72)
+    
     state.next24 = next24
     sendEvent(name: "energy", value: next24)
     state.next24High = next24High
