@@ -33,7 +33,7 @@ metadata {
 }
 
 def version() {
-    return "1.0.3"
+    return "1.0.4"
 }
 
 def installed() {
@@ -69,7 +69,7 @@ def refresh() {
     host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&api_key=${api_key}"
     if(debugLog) log.debug host
     forecasts = httpGet([uri: host]) {resp -> def respData = resp.data.forecasts}
-    if(debugLog) log.deubg JsonOutput.toJson(forecasts)
+    if(debugLog) log.debug JsonOutput.toJson(forecasts)
     def next24 = 0;
     def next24High = 0;
     def next24Low = 0;
