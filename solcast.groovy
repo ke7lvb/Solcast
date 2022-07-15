@@ -123,7 +123,7 @@ def refresh() {
     state.peak72 = peak72.pv_estimate
     sendEvent(name: "72 Hour Peak Production", value: state.peak72)
     
-    state.next1 = next1
+    state.next1 = next1*1000
     sendEvent(name: "1 Hour Estimate", value: next1*1000)
     state.next24 = next24
     sendEvent(name: "energy", value: next24)
