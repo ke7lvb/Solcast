@@ -7,8 +7,11 @@ metadata {
     ) {
         capability "Refresh"
         capability "EnergyMeter"
+        capability "PowerMeter"
 
         attribute "energy", "number"
+        attribute "power", "number"
+        attribute "1 Hour Estimate", "number"
         attribute "24 Hour Peak Production", "number"
         attribute "48 Hour Peak Production", "number"
         attribute "72 Hour Peak Production", "number"
@@ -70,6 +73,7 @@ def refresh() {
     if(debugLog) log.debug host
     forecasts = httpGet([uri: host]) {resp -> def respData = resp.data.forecasts}
     if(debugLog) log.debug JsonOutput.toJson(forecasts)
+    def next1 =0;
     def next24 = 0;
     def next24High = 0;
     def next24Low = 0;
@@ -83,7 +87,9 @@ def refresh() {
         pv_estimate = forecasts[x].pv_estimate/2
         pv_estimate_high = forecasts[x].pv_estimate90/2
         pv_estimate_low = forecasts[x].pv_estimate10/2
-
+        if(x < 2){
+            next1 = next1 + pv_estimate
+        }
         if(x < 48){
             next24 = next24 + pv_estimate
             next24High = next24High + pv_estimate_high
@@ -117,8 +123,11 @@ def refresh() {
     state.peak72 = peak72.pv_estimate
     sendEvent(name: "72 Hour Peak Production", value: state.peak72)
     
+    state.next1 = next1
+    sendEvent(name: "1 Hour Estimate", value: next1)
     state.next24 = next24
     sendEvent(name: "energy", value: next24)
+    sendEvent(name: "power", value: next24*1000)
     state.next24High = next24High
     state.next24Low = next24Low
     state.next48 = next48
