@@ -12,6 +12,7 @@ metadata {
         attribute "energy", "number"
         attribute "power", "number"
         attribute "1 Hour Estimate", "number"
+        attribute "one_hour_estimate", "number"
         attribute "24 Hour Peak Production", "number"
         attribute "48 Hour Peak Production", "number"
         attribute "72 Hour Peak Production", "number"
@@ -36,7 +37,7 @@ metadata {
 }
 
 def version() {
-    return "1.0.4"
+    return "1.0.5"
 }
 
 def installed() {
@@ -69,7 +70,7 @@ import groovy.json.JsonOutput;
 def refresh() {
     outputTZ = TimeZone.getTimeZone('UTC')
 
-    host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&api_key=${api_key}"
+    host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&api_key=${api_key}&hours=72"
     if(debugLog) log.debug host
     forecasts = httpGet([uri: host]) {resp -> def respData = resp.data.forecasts}
     if(debugLog) log.debug JsonOutput.toJson(forecasts)
@@ -83,7 +84,9 @@ def refresh() {
     def next72 = 0;
     def next72High = 0;
     def next72Low = 0;
-    for(int x=0; x<144; x++){
+    def size = forecasts.size();
+    for(int x=0; x<size; x++){
+        if(debugLog) log.debug forecasts[x]
         pv_estimate = forecasts[x].pv_estimate/2
         pv_estimate_high = forecasts[x].pv_estimate90/2
         pv_estimate_low = forecasts[x].pv_estimate10/2
@@ -125,6 +128,7 @@ def refresh() {
     
     state.next1 = next1*1000
     sendEvent(name: "1 Hour Estimate", value: next1*1000)
+    sendEvent(name: "one_hour_estimate", value: next1*1000)
     state.next24 = next24
     sendEvent(name: "energy", value: next24)
     sendEvent(name: "power", value: next24*1000)
