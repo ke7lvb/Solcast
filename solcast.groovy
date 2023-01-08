@@ -27,6 +27,7 @@ metadata {
         input name: "resource_id", type: "string", title: "Site Resource ID", required: true
         input("refresh_interval", "enum", title: "How often to refresh the battery data", options: [
             0: "Do NOT update",
+            30: "30 minutes",
             1: "1 Hour",
             3: "3 Hours",
             8: "8 Hours",
@@ -37,7 +38,7 @@ metadata {
 }
 
 def version() {
-    return "1.0.5"
+    return "1.0.6"
 }
 
 def installed() {
@@ -57,6 +58,8 @@ def updated() {
         //refresh()
         if (settings.refresh_interval == "24") {
             schedule("51 7 2 ? * * *", refresh, [overwrite: true])
+        } else if(settings.refresh_interval == "30"){
+            schedule("51 */30 * ? * *", refresh, [overwrite: true])
         } else {
             schedule("51 7 */${settings.refresh_interval} ? * * *", refresh, [overwrite: true])
         }
@@ -107,16 +110,16 @@ def refresh() {
         next72High = next72High + pv_estimate_high
         next72Low = next72Low + pv_estimate_low
     }
-    
+
     tomorrow = new Date().next().format("yyyy-MM-dd'T'HH:mm:ss'Z'",outputTZ)
     forecast24 = forecasts.findAll { it.period_end < tomorrow}
     if(debugLog) log.info forecast24
     peak24 = forecast24.max() { it.pv_estimate }
-    
+
     twoDays = new Date().plus(2).format("yyyy-MM-dd'T'HH:mm:ss'Z'",outputTZ)
     forecast48 = forecasts.findAll { it.period_end < twoDays}
     peak48 = forecast48.max() { it.pv_estimate }
-    
+
     peak72 = forecasts.max() { it.pv_estimate }
 
     state.peak24 = peak24.pv_estimate
@@ -125,7 +128,7 @@ def refresh() {
     sendEvent(name: "48 Hour Peak Production", value: state.peak48)
     state.peak72 = peak72.pv_estimate
     sendEvent(name: "72 Hour Peak Production", value: state.peak72)
-    
+
     state.next1 = next1*1000
     sendEvent(name: "1 Hour Estimate", value: next1*1000)
     sendEvent(name: "one_hour_estimate", value: next1*1000)
@@ -143,7 +146,7 @@ def refresh() {
     state.next72High = next72High
     state.next72Low = next72Low
 
-    now = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'",outputTZ)
-    state.lastUpdate = timeToday(now, location.timeZone)
+    now = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    state.lastUpdate = timeToday(now)
     sendEvent(name: "lastUpdate", value: state.lastUpdate)
 }
