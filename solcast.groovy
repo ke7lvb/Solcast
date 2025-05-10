@@ -58,11 +58,11 @@ def updated() {
     if (settings.refresh_interval != "0") {
         //refresh()
         if (settings.refresh_interval == "24") {
-            schedule("51 7 2 ? * * *", refresh, [overwrite: true])
+            schedule("0 59 23 * * ?", refresh, [overwrite: true])
         } else if(settings.refresh_interval == "30"){
-            schedule("51 */30 * ? * *", refresh, [overwrite: true])
+            schedule("0 29,59 * ? * *", refresh, [overwrite: true])
         } else {
-            schedule("51 7 */${settings.refresh_interval} ? * * *", refresh, [overwrite: true])
+            schedule("0 59 0/${settings.refresh_interval} ? * *", refresh, [overwrite: true])
         }
     }else{
         unschedule(refresh)
