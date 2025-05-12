@@ -1,0 +1,16 @@
+{
+  "packageName": "Solcast - Solar Forecast",
+  "author": "ke7lvb",
+  "version": "1.1.1",
+  "minimumHEVersion": "2.1.9",
+  "dateReleased": "2025-05-11",
+  "drivers": [
+    {
+      "id": "1bd11cc7-0dd4-4be9-ad6c-0d1a41f9fbe1",
+      "name": "Solcast",
+      "namespace": "ke7lvb",
+      "location": "https://raw.githubusercontent.com/ke7lvb/Solcast/refs/heads/main/solcast.groovy",
+      "required": true
+    }
+  ]
+}
