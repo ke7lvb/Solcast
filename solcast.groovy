@@ -39,7 +39,7 @@ metadata {
     }
 }
 def version() {
-    return "1.1.1"
+    return "2.0.1"
 }
 
 def installed() {
