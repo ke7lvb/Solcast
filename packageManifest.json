@@ -1,9 +1,10 @@
 {
   "packageName": "Solcast - Solar Forecast",
   "author": "ke7lvb",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "minimumHEVersion": "2.1.9",
-  "dateReleased": "2021-11-11",
+  "dateReleased": "2026-09-25",
+  "releaseNotes": "1.2.0 - Switched to asynchronous API calls, API key is sent as a header and no longer appears in logs, forecast timestamps are parsed as dates, added units to events, fixed crashes on failed API calls and in test mode, fixed lastUpdate time zone, empty days report 0 instead of null.",
   "drivers": [
     {
       "id": "1bd11cc7-0dd4-4be9-ad6c-0d1a41f9fbe1",

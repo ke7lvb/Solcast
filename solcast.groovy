@@ -25,7 +25,7 @@ metadata {
         input name: "debugLog", type: "bool", title: "Enable Debug logging", defaultValue: true, description: ""
         input name: "api_key", type: "string", title: "API Key", required: true
         input name: "resource_id", type: "string", title: "Site Resource ID", required: true
-        input("refresh_interval", "enum", title: "How often to refresh the battery data", options: [
+        input("refresh_interval", "enum", title: "How often to refresh the solar data", options: [
             0: "Do NOT update",
             30: "30 minutes",
             1: "1 Hour",
@@ -39,7 +39,7 @@ metadata {
     }
 }
 def version() {
-    return "1.1.2"
+    return "1.2.0"
 }
 
 def installed() {
@@ -77,28 +77,26 @@ import groovy.json.JsonOutput;
 def refresh() {
     def host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&hours=72"
     if(debugLog) log.debug "Host: " + host
-    def forecasts
     if ( testMode == true ) {
         if (!state.jsonResponse) {
             log.warn "testMode enabled but no saved API response exists yet. Disable testMode and refresh once to populate it."
             return
         }
-        forecasts = new groovy.json.JsonSlurper().parseText(state.jsonResponse)
+        def forecasts = new groovy.json.JsonSlurper().parseText(state.jsonResponse)
         log.warn ("testMode enabled, skipping API call and reusing JSON from previous call")
         if(debugLog) log.debug "forecasts: " + JsonOutput.toJson(forecasts)
+        processForecasts(forecasts)
     } else {
-        forecasts = apiCall(host)
+        apiCall(host)
     }
-    if (!forecasts) {
-        log.error "No forecast data available, skipping update"
-        return
-    }
-    
+}
+
+def processForecasts(forecasts) {
     //get the next hour forecast (average of the next two 30 minute periods)
     def firstHour = forecasts.take(2)
     def nextHour = firstHour.sum(0) { it.pv_estimate } / firstHour.size()
     if(logEnable) log.info "nextHour: " + nextHour
-    sendEvent(name: "nextHour", value: nextHour)
+    sendEvent(name: "nextHour", value: nextHour, unit: "kWh")
     
 
     // Get and sum the next 24 hours (48 entries)
@@ -106,8 +104,8 @@ def refresh() {
     if (debugLog) log.debug "next24Hours: " + next24Hours
     def cumulativeNext24Hours = next24Hours.sum(0) { it.pv_estimate / 2 }
     if (logEnable) log.info "CumulativeNext24Hours: " + cumulativeNext24Hours
-    sendEvent(name: "energy", value: cumulativeNext24Hours)    
-    sendEvent(name: "power", value: Math.round(cumulativeNext24Hours * 1000) ) //convert to wh
+    sendEvent(name: "energy", value: cumulativeNext24Hours, unit: "kWh")    
+    sendEvent(name: "power", value: Math.round(cumulativeNext24Hours * 1000), unit: "Wh") //convert to wh
 
 
     
@@ -127,10 +125,10 @@ def refresh() {
     if(debugLog) log.debug "forecastToday: " + forecastToday
     def peakToday = forecastToday.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakToday: " + peakToday
-    sendEvent(name: "peakToday", value: peakToday)
+    sendEvent(name: "peakToday", value: peakToday, unit: "kW")
     def cumulativeToday = forecastToday.sum(0) { it.pv_estimate / 2 }
     if(logEnable) log.info "cumulativeToday: " + cumulativeToday
-    sendEvent(name: "cumulativeToday", value: cumulativeToday)
+    sendEvent(name: "cumulativeToday", value: cumulativeToday, unit: "kWh")
 
     //get day after tomorrow at midnight local time and convert it to UTC
     def afterTomorrowMidnight = Calendar.getInstance(tz) // Get the current time
@@ -148,10 +146,10 @@ def refresh() {
     if(debugLog) log.debug "forecastTomorrow: " + forecastTomorrow
     def peakTomorrow = forecastTomorrow.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakTomorrow: " + peakTomorrow
-    sendEvent(name: "peakTomorrow", value: peakTomorrow)
+    sendEvent(name: "peakTomorrow", value: peakTomorrow, unit: "kW")
     def cumulativeTomorrow = forecastTomorrow.sum(0) { it.pv_estimate / 2 }
     if(logEnable) log.info "cumulativeTomorrow: " + cumulativeTomorrow
-    sendEvent(name: "cumulativeTomorrow", value: cumulativeTomorrow)
+    sendEvent(name: "cumulativeTomorrow", value: cumulativeTomorrow, unit: "kWh")
 
     
     //get 3 days from today at midnight local time and convert it to UTC
@@ -170,10 +168,10 @@ def refresh() {
     if(debugLog) log.debug "forecastDayAfterTomorrow: " + forecastDayAfterTomorrow
     def peakDayAfterTomorrow = forecastDayAfterTomorrow.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakDayAfterTomorrow: " + peakDayAfterTomorrow
-    sendEvent(name: "peakDayAfterTomorrow", value: peakDayAfterTomorrow)
+    sendEvent(name: "peakDayAfterTomorrow", value: peakDayAfterTomorrow, unit: "kW")
     def cumulativeDayAfterTomorrow = forecastDayAfterTomorrow.sum(0) { it.pv_estimate / 2 }
     if(logEnable) log.info "cumulativeDayAfterTomorrow: " + cumulativeDayAfterTomorrow
-    sendEvent(name: "cumulativeDayAfterTomorrow", value: cumulativeDayAfterTomorrow)
+    sendEvent(name: "cumulativeDayAfterTomorrow", value: cumulativeDayAfterTomorrow, unit: "kWh")
 
 	state.lastUpdate = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone("UTC"))
 	sendEvent(name: "lastUpdate", value: state.lastUpdate)
@@ -190,35 +188,45 @@ def parseTimestamp(String timestamp) {
 def apiCall(host) {
 
     if(debugLog) log.debug host
-    try {
-        def forecasts
-        //send the API key as a header so it doesn't appear in the URL or logs
-        httpGet([uri: host, headers: ["Authorization": "Bearer ${api_key}".toString()]]) { resp -> forecasts = resp.data?.forecasts }
-        if (!forecasts) {
-            log.error("API response did not contain any forecasts")
-            return false
-        }
-        if(debugLog) log.debug JsonOutput.toJson(forecasts)
-        state.jsonResponse = JsonOutput.toJson(forecasts)
-        return forecasts
-    }
-    catch (groovyx.net.http.HttpResponseException exception) {
+    //send the API key as a header so it doesn't appear in the URL or logs
+    def params = [
+        uri: host,
+        headers: ["Authorization": "Bearer ${api_key}".toString()],
+        timeout: 30
+    ]
+    asynchttpGet("handleApiResponse", params)
+}
+
+def handleApiResponse(response, data) {
+    if (response.hasError()) {
         if (debugLog) {
-            log.debug exception
+            log.debug response.getErrorMessage()
         }
-        def httpError = exception.getStatusCode()
+        def httpError = response.getStatus()
         if ( httpError == 429 ) {
             log.error("http 429 - rate limit error. You have sent too many API requests today.")
         } else {
             log.error("http error ${httpError}. Enable debugging for further info")
         }
-        return false
-    } 
+        return
+    }
+
+    def forecasts
+    try {
+        forecasts = response.getJson()?.forecasts
+    }
     catch (exception) {
         if (debugLog) {
             log.debug exception
         }
-        log.error("unknown error during API Call. Enable debugging for further info")
-        return false
-     }
+        log.error("unable to parse API response. Enable debugging for further info")
+        return
+    }
+    if (!forecasts) {
+        log.error("API response did not contain any forecasts")
+        return
+    }
+    if(debugLog) log.debug JsonOutput.toJson(forecasts)
+    state.jsonResponse = JsonOutput.toJson(forecasts)
+    processForecasts(forecasts)
 }
