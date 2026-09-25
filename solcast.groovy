@@ -75,7 +75,7 @@ import java.util.Calendar
 import java.util.TimeZone
 import groovy.json.JsonOutput;
 def refresh() {
-    def host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&api_key=${api_key}&hours=72"
+    def host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&hours=72"
     if(debugLog) log.debug "Host: " + host
     def forecasts
     if ( testMode == true ) {
@@ -120,14 +120,10 @@ def refresh() {
     tomorrowMidnight.set(Calendar.HOUR_OF_DAY, 0) // Set to midnight
     tomorrowMidnight.set(Calendar.MINUTE, 0)
     tomorrowMidnight.set(Calendar.SECOND, 0)
+    tomorrowMidnight.set(Calendar.MILLISECOND, 0)
 
-    def sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    sdf.setTimeZone(TimeZone.getTimeZone("UTC")) // Convert to UTC
-
-    def utcTomorrowMidnight = sdf.format(tomorrowMidnight.time)
-
-    //use the UTC timestamp to limit results to end of today
-    def forecastToday = forecasts.findAll { it.period_end < utcTomorrowMidnight}
+    //a period ending exactly at midnight covers 23:30-00:00, so it belongs to the earlier day
+    def forecastToday = forecasts.findAll { parseTimestamp(it.period_end) <= tomorrowMidnight.time }
     if(debugLog) log.debug "forecastToday: " + forecastToday
     def peakToday = forecastToday.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakToday: " + peakToday
@@ -142,11 +138,13 @@ def refresh() {
     afterTomorrowMidnight.set(Calendar.HOUR_OF_DAY, 0) // Set to midnight
     afterTomorrowMidnight.set(Calendar.MINUTE, 0)
     afterTomorrowMidnight.set(Calendar.SECOND, 0)
+    afterTomorrowMidnight.set(Calendar.MILLISECOND, 0)
 
-    def utcAfterTomorrowMidnight = sdf.format(afterTomorrowMidnight.time)
-
-    //use the UTC timestamp to limit results to tomorrow
-    def forecastTomorrow = forecasts.findAll { it.period_end >= utcTomorrowMidnight && it.period_end < utcAfterTomorrowMidnight}
+    //limit results to tomorrow
+    def forecastTomorrow = forecasts.findAll {
+        def periodEnd = parseTimestamp(it.period_end)
+        periodEnd > tomorrowMidnight.time && periodEnd <= afterTomorrowMidnight.time
+    }
     if(debugLog) log.debug "forecastTomorrow: " + forecastTomorrow
     def peakTomorrow = forecastTomorrow.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakTomorrow: " + peakTomorrow
@@ -162,11 +160,13 @@ def refresh() {
     threeDaysMidnight.set(Calendar.HOUR_OF_DAY, 0) // Set to midnight
     threeDaysMidnight.set(Calendar.MINUTE, 0)
     threeDaysMidnight.set(Calendar.SECOND, 0)
+    threeDaysMidnight.set(Calendar.MILLISECOND, 0)
 
-    def utcThreeDaysMidnight = sdf.format(threeDaysMidnight.time)
-
-    //use the UTC timestamp to limit results to day after tomorrow
-    def forecastDayAfterTomorrow = forecasts.findAll { it.period_end >= utcAfterTomorrowMidnight && it.period_end < utcThreeDaysMidnight}
+    //limit results to day after tomorrow
+    def forecastDayAfterTomorrow = forecasts.findAll {
+        def periodEnd = parseTimestamp(it.period_end)
+        periodEnd > afterTomorrowMidnight.time && periodEnd <= threeDaysMidnight.time
+    }
     if(debugLog) log.debug "forecastDayAfterTomorrow: " + forecastDayAfterTomorrow
     def peakDayAfterTomorrow = forecastDayAfterTomorrow.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakDayAfterTomorrow: " + peakDayAfterTomorrow
@@ -180,12 +180,20 @@ def refresh() {
 
 }
 
+//parse an ISO 8601 timestamp from Solcast, e.g. 2024-01-01T12:30:00.0000000Z
+def parseTimestamp(String timestamp) {
+    //SimpleDateFormat can't handle 7 digit fractional seconds, and Solcast periods fall on whole seconds
+    def iso = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX")
+    return iso.parse(timestamp.replaceFirst(/\.\d+/, ""))
+}
+
 def apiCall(host) {
 
     if(debugLog) log.debug host
     try {
         def forecasts
-        httpGet([uri: host]) { resp -> forecasts = resp.data?.forecasts }
+        //send the API key as a header so it doesn't appear in the URL or logs
+        httpGet([uri: host, headers: ["Authorization": "Bearer ${api_key}".toString()]]) { resp -> forecasts = resp.data?.forecasts }
         if (!forecasts) {
             log.error("API response did not contain any forecasts")
             return false
