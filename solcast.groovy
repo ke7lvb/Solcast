@@ -39,7 +39,7 @@ metadata {
     }
 }
 def version() {
-    return "1.1.1"
+    return "1.1.2"
 }
 
 def installed() {
@@ -75,18 +75,28 @@ import java.util.Calendar
 import java.util.TimeZone
 import groovy.json.JsonOutput;
 def refresh() {
-    host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&api_key=${api_key}&hours=72"
+    def host = "https://api.solcast.com.au/rooftop_sites/${resource_id}/forecasts?format=json&api_key=${api_key}&hours=72"
     if(debugLog) log.debug "Host: " + host
+    def forecasts
     if ( testMode == true ) {
+        if (!state.jsonResponse) {
+            log.warn "testMode enabled but no saved API response exists yet. Disable testMode and refresh once to populate it."
+            return
+        }
         forecasts = new groovy.json.JsonSlurper().parseText(state.jsonResponse)
         log.warn ("testMode enabled, skipping API call and reusing JSON from previous call")
         if(debugLog) log.debug "forecasts: " + JsonOutput.toJson(forecasts)
     } else {
         forecasts = apiCall(host)
     }
+    if (!forecasts) {
+        log.error "No forecast data available, skipping update"
+        return
+    }
     
-    //get the next hour forecast
-    def nextHour = (forecasts[0]?.pv_estimate + forecasts[1]?.pv_estimate) / 2
+    //get the next hour forecast (average of the next two 30 minute periods)
+    def firstHour = forecasts.take(2)
+    def nextHour = firstHour.sum(0) { it.pv_estimate } / firstHour.size()
     if(logEnable) log.info "nextHour: " + nextHour
     sendEvent(name: "nextHour", value: nextHour)
     
@@ -94,15 +104,21 @@ def refresh() {
     // Get and sum the next 24 hours (48 entries)
     def next24Hours = forecasts.take(48)
     if (debugLog) log.debug "next24Hours: " + next24Hours
-    def cumulativeNext24Hours = next24Hours.sum { it.pv_estimate / 2 }
+    def cumulativeNext24Hours = next24Hours.sum(0) { it.pv_estimate / 2 }
     if (logEnable) log.info "CumulativeNext24Hours: " + cumulativeNext24Hours
     sendEvent(name: "energy", value: cumulativeNext24Hours)    
-    sendEvent(name: "power", value: Math.round(cumulativeNext24Hours * 1000) ) //convert to wh
+    //current 30 minute period estimate, converted from kW to W
+    def power = Math.round(forecasts[0].pv_estimate * 1000)
+    if (logEnable) log.info "power: " + power
+    sendEvent(name: "power", value: power)
 
 
     
+    //use the hub location's time zone to determine day boundaries
+    def tz = location?.timeZone ?: TimeZone.getDefault()
+
     //get tomorrow at midnight local time and convert it to UTC
-    def tomorrowMidnight = Calendar.getInstance() // Get the current time
+    def tomorrowMidnight = Calendar.getInstance(tz) // Get the current time
     tomorrowMidnight.add(Calendar.DATE, 1) // Move to tomorrow
     tomorrowMidnight.set(Calendar.HOUR_OF_DAY, 0) // Set to midnight
     tomorrowMidnight.set(Calendar.MINUTE, 0)
@@ -114,17 +130,17 @@ def refresh() {
     def utcTomorrowMidnight = sdf.format(tomorrowMidnight.time)
 
     //use the UTC timestamp to limit results to end of today
-    forecastToday = forecasts.findAll { it.period_end < utcTomorrowMidnight}
+    def forecastToday = forecasts.findAll { it.period_end < utcTomorrowMidnight}
     if(debugLog) log.debug "forecastToday: " + forecastToday
-    peakToday = forecastToday.max { it.pv_estimate }?.pv_estimate
+    def peakToday = forecastToday.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakToday: " + peakToday
     sendEvent(name: "peakToday", value: peakToday)
-    cumulativeToday = forecastToday.sum() { it.pv_estimate / 2 }
+    def cumulativeToday = forecastToday.sum(0) { it.pv_estimate / 2 }
     if(logEnable) log.info "cumulativeToday: " + cumulativeToday
     sendEvent(name: "cumulativeToday", value: cumulativeToday)
 
     //get day after tomorrow at midnight local time and convert it to UTC
-    def afterTomorrowMidnight = Calendar.getInstance() // Get the current time
+    def afterTomorrowMidnight = Calendar.getInstance(tz) // Get the current time
     afterTomorrowMidnight.add(Calendar.DATE, 2) // Move 2 days
     afterTomorrowMidnight.set(Calendar.HOUR_OF_DAY, 0) // Set to midnight
     afterTomorrowMidnight.set(Calendar.MINUTE, 0)
@@ -133,18 +149,18 @@ def refresh() {
     def utcAfterTomorrowMidnight = sdf.format(afterTomorrowMidnight.time)
 
     //use the UTC timestamp to limit results to tomorrow
-    forecastTomorrow = forecasts.findAll { it.period_end >= utcTomorrowMidnight && it.period_end < utcAfterTomorrowMidnight}
+    def forecastTomorrow = forecasts.findAll { it.period_end >= utcTomorrowMidnight && it.period_end < utcAfterTomorrowMidnight}
     if(debugLog) log.debug "forecastTomorrow: " + forecastTomorrow
-    peakTomorrow = forecastTomorrow.max { it.pv_estimate }?.pv_estimate
+    def peakTomorrow = forecastTomorrow.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakTomorrow: " + peakTomorrow
     sendEvent(name: "peakTomorrow", value: peakTomorrow)
-    cumulativeTomorrow = forecastTomorrow.sum() { it.pv_estimate / 2 }
+    def cumulativeTomorrow = forecastTomorrow.sum(0) { it.pv_estimate / 2 }
     if(logEnable) log.info "cumulativeTomorrow: " + cumulativeTomorrow
     sendEvent(name: "cumulativeTomorrow", value: cumulativeTomorrow)
 
     
     //get 3 days from today at midnight local time and convert it to UTC
-    def threeDaysMidnight = Calendar.getInstance() // Get the current time
+    def threeDaysMidnight = Calendar.getInstance(tz) // Get the current time
     threeDaysMidnight.add(Calendar.DATE, 3) // Move 3 days
     threeDaysMidnight.set(Calendar.HOUR_OF_DAY, 0) // Set to midnight
     threeDaysMidnight.set(Calendar.MINUTE, 0)
@@ -153,16 +169,16 @@ def refresh() {
     def utcThreeDaysMidnight = sdf.format(threeDaysMidnight.time)
 
     //use the UTC timestamp to limit results to day after tomorrow
-    forecastDayAfterTomorrow = forecasts.findAll { it.period_end >= utcAfterTomorrowMidnight && it.period_end < utcThreeDaysMidnight}
+    def forecastDayAfterTomorrow = forecasts.findAll { it.period_end >= utcAfterTomorrowMidnight && it.period_end < utcThreeDaysMidnight}
     if(debugLog) log.debug "forecastDayAfterTomorrow: " + forecastDayAfterTomorrow
-    peakDayAfterTomorrow = forecastDayAfterTomorrow.max { it.pv_estimate }?.pv_estimate
+    def peakDayAfterTomorrow = forecastDayAfterTomorrow.max { it.pv_estimate }?.pv_estimate ?: 0
     if(logEnable) log.info "peakDayAfterTomorrow: " + peakDayAfterTomorrow
     sendEvent(name: "peakDayAfterTomorrow", value: peakDayAfterTomorrow)
-    cumulativeDayAfterTomorrow = forecastDayAfterTomorrow.sum() { it.pv_estimate / 2 }
+    def cumulativeDayAfterTomorrow = forecastDayAfterTomorrow.sum(0) { it.pv_estimate / 2 }
     if(logEnable) log.info "cumulativeDayAfterTomorrow: " + cumulativeDayAfterTomorrow
     sendEvent(name: "cumulativeDayAfterTomorrow", value: cumulativeDayAfterTomorrow)
 
-	state.lastUpdate = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'")
+	state.lastUpdate = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone("UTC"))
 	sendEvent(name: "lastUpdate", value: state.lastUpdate)
 
 }
@@ -171,7 +187,12 @@ def apiCall(host) {
 
     if(debugLog) log.debug host
     try {
-        forecasts = httpGet([uri: host]) {resp -> def respData = resp.data.forecasts}
+        def forecasts
+        httpGet([uri: host]) { resp -> forecasts = resp.data?.forecasts }
+        if (!forecasts) {
+            log.error("API response did not contain any forecasts")
+            return false
+        }
         if(debugLog) log.debug JsonOutput.toJson(forecasts)
         state.jsonResponse = JsonOutput.toJson(forecasts)
         return forecasts
