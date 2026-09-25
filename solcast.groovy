@@ -107,10 +107,7 @@ def refresh() {
     def cumulativeNext24Hours = next24Hours.sum(0) { it.pv_estimate / 2 }
     if (logEnable) log.info "CumulativeNext24Hours: " + cumulativeNext24Hours
     sendEvent(name: "energy", value: cumulativeNext24Hours)    
-    //current 30 minute period estimate, converted from kW to W
-    def power = Math.round(forecasts[0].pv_estimate * 1000)
-    if (logEnable) log.info "power: " + power
-    sendEvent(name: "power", value: power)
+    sendEvent(name: "power", value: Math.round(cumulativeNext24Hours * 1000) ) //convert to wh
 
 
     
